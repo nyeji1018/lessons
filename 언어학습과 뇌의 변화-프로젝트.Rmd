@@ -1,0 +1,378 @@
+---
+title: "대한민국 장관의 성별에 따른 언어 사용 특징 : 연설문을 중심으로"
+author: "Nam Yeji"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_depth: 5
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+# 1. 분석 전 준비
+## 패키지 호출
+```{r}
+library(KoNLP)
+useSejongDic() 
+library(tidyverse)
+library(rvest)
+library(readxl)
+library(stringr)
+library(lubridate)
+library(xlsx)
+library(dplyr)
+library(stylo)
+library(data.table)
+library(rJava)
+library(devtools)
+library(tidytext)
+library(epubr)
+library(RcppMeCab)
+library(ggplot2)
+```
+
+## URL 목록으로 텍스트 데이터 호출
+```{r, eval=FALSE}
+list <- read_xlsx("C:/Users/Nam Yeji/Desktop/대학원/2022-1/2022-1 언어학습과 뇌의 변화/프로젝트/장관 연설문 URL 목록.xlsx")
+
+list$Url
+
+Contents <- NULL
+for (link in list$Url) {
+  html <- read_html(link)
+  Contents <- c(Contents, html %>%
+                  html_nodes(., "#container > div > article > div.article-content > div.view-cont") %>%
+                  html_text() %>%
+                  gsub("\r\n"," ", .) %>%
+                  gsub("\r\t\t\t\t\t\t", "", .))
+}
+Contents <- as.data.frame(Contents)
+
+Title <- NULL
+for (link in list$Url) {
+  html <- read_html(link)
+  Title <- c(Title, html %>%
+               html_nodes(., "#container > div > article > div.article-head > h1") %>%
+               html_text())
+}
+Title <- as.data.frame(Title)
+
+Depart <- NULL
+for (link in list$Url) {
+  html <- read_html(link)
+  Depart <- c(Depart, html %>%
+                html_nodes(., "#container > div > article > div.article-head > div.info > span:nth-child(1)") %>%
+                html_text() %>%
+                gsub("[연설자:]","", .))
+}
+Depart <- as.data.frame(Depart)
+
+Date <- NULL
+for (link in list$Url) {
+  html <- read_html(link)
+  Date <- c(Date, html %>%
+              html_nodes(., "#container > div > article > div.article-head > div.info > span:nth-child(2)") %>%
+              html_text() %>%
+              gsub("[연설일:]","", .))
+}
+Date <- as.data.frame(Date)
+
+Speech <- cbind(Title, Contents, Depart, Date)
+
+save(Speech, file="C:/Users/Nam Yeji/Desktop/대학원/2022-1/2022-1 언어학습과 뇌의 변화/프로젝트/Speech.rda")
+```
+
+## 텍스트 데이터 로드
+```{r}
+load("C:/Users/Nam Yeji/Desktop/대학원/2022-1/2022-1 언어학습과 뇌의 변화/프로젝트/Speech.rda")
+```
+
+## 텍스트 데이터 정제
+```{r}
+Speech.1 <- Speech
+Speech.1$Contents <- Speech$Contents %>%
+  gsub("\t", "", .) %>%
+  str_replace_all(., "[^가-힣|^a-zA-Z|^0-9|^[(]|^[)]]", " ") %>%
+  str_replace_all(., "[(]\\w*|\\s*[)]", "") %>%
+  str_replace_all(., "[\\s]{2,}", " ")
+
+Speech.1$Depart <- Speech$Depart %>%
+  str_replace_all(., "장관$", "") %>%
+  gsub("부총리", "", .) %>%
+  gsub("겸", "", .) %>%
+  gsub("및", "", .) %>%
+  str_replace_all(., "^[\\s]{1,}", "") %>%
+  str_replace_all(., "[\\s]{1,}$", "") %>%
+  str_replace_all(., "장관$", "") %>%
+  str_replace_all(., "[\\s]{1,}$", "") %>%
+  str_replace_all(., "[\\w*|\\s*]{1,}차관$", "del") %>%
+  str_replace_all(., "[\\w*|\\s*]{1,}처장$", "del") %>%
+  str_replace_all(., "[\\w*|\\s*]{1,}처$", "del") %>%
+  str_replace_all(., "[\\w*|\\s*]{1,}차장$", "del") %>%
+  str_replace_all(., "[\\w*|\\s*]{1,}축수$", "del") %>%
+  str_replace_all(., "^국무총리$", "del") %>%
+  str_replace_all(., "^대통령$", "del")
+
+Speech.1$Date <- Speech$Date %>%
+  ymd()
+```
+
+```{r}
+# 부처 빈도수 확인 후 축약어, 오타 대체
+freq.Depart <- Speech.1 %>%
+  group_by(Depart) %>%
+  summarise(n=n()) %>%
+  as.data.frame()
+
+Speech.2 <- Speech.1
+Speech.2$Depart <- Speech.1$Depart %>%
+  gsub("교욱부", "교육부", .) %>%
+  gsub("여가부", "여성가족부", .) %>%
+  gsub("기재부", "기획재정부", .) %>%
+  gsub("여성부", "여성가족부", .) %>%
+  gsub("문체부", "문화체육관광부", .) %>%
+  gsub("문화체육관광붕", "문화체육관광부", .) %>%
+  gsub("문화체육부", "문화체육관광부", .) %>%
+  gsub("문화체융ㄱ관광부", "문화체육관광부", .) %>%
+  gsub("산업통상원부", "산업통상자원부", .) %>%
+  str_replace_all(., "^통$", "통일부") %>%
+  str_replace_all(., "^외교$", "외교부")
+
+freq.Depart.1 <- Speech.2 %>%
+  group_by(Depart) %>%
+  summarise(n=n()) %>%
+  as.data.frame()
+```
+
+```{r}
+# 소속이 장관에 해당되지 않는 연설문 제거
+Speech.3 <- Speech.2 %>%
+  filter(!Depart %in% c("del"))
+
+freq.Depart.2 <- Speech.3 %>%
+  group_by(Depart) %>%
+  summarise(n=n()) %>%
+  as.data.frame()
+```
+
+```{r}
+# 중복 연설문 제거
+Speech.4 <- Speech.3
+Speech.4$Dup <- paste0(Speech.4$Title, Speech.4$Depart, Speech.4$Date)
+Speech.4 <- Speech.4 %>% 
+  filter(!duplicated(Dup)) %>%
+  select(-c(Dup))
+
+# 성별 변수 추가
+freq.Depart.3 <- Speech.4 %>%
+  group_by(Depart) %>%
+  summarise(n=n()) %>%
+  as.data.frame()
+
+Speech.5 <- Speech.4 %>%
+  mutate(Gender=case_when(
+    Depart=="고용노동부" & Date<=ymd("2017.07.24") ~ "Male",
+    Depart=="고용노동부" & Date>ymd("2017.07.24") & Date<=ymd("2018.09.20") ~ "Female",
+    Depart=="고용노동부" & Date>ymd("2018.09.20") ~ "Male",
+    Depart=="교육부" & Date<=ymd("2018.10.02") ~ "Male",
+    Depart=="교육부" & Date>ymd("2018.10.02") & Date<=ymd("2022.05.09") ~ "Female",
+    Depart=="국방부" ~ "Male",
+    Depart=="국토교통부" & Date<=ymd("2017.06.21") ~ "Male",
+    Depart=="국토교통부" & Date>ymd("2017.06.21") & Date<=ymd("2020.12.29") ~ "Female",
+    Depart=="국토교통부" & Date>ymd("2020.12.29") ~ "Male",
+    Depart=="기획재정부" ~ "Male",
+    Depart=="농림축산식품부" ~ "Male",
+    Depart=="문화체육관광부" & Date<=ymd("2016.09.04") ~ "Male",
+    Depart=="문화체육관광부" & Date>ymd("2016.09.04") & Date<=ymd("2017.01.20") ~ "Female",
+    Depart=="문화체육관광부" & Date>ymd("2017.01.20") ~ "Male",
+    Depart=="미래창조과학부" ~ "Male",
+    Depart=="법무부" & Date<=ymd("2020.01.01") ~ "Male",
+    Depart=="법무부" & Date>ymd("2020.01.01") & Date<=ymd("2021.01.27") ~ "Female",
+    Depart=="법무부" & Date>ymd("2021.01.27") ~ "Male",
+    Depart=="보건복지부" ~ "Male",
+    Depart=="산업통상자원부" ~ "Male",
+    Depart=="여성가족부" ~ "Female",
+    Depart=="외교부" & Date<=ymd("2017.06.18") ~ "Male",
+    Depart=="외교부" & Date>ymd("2017.06.18") & Date<=ymd("2021.02.08") ~ "Female",
+    Depart=="외교부" & Date>ymd("2021.02.08") ~ "Male",
+    Depart=="통일부" ~ "Male",
+    Depart=="환경부" & Date<=ymd("2017.07.04") ~ "Male",
+    Depart=="환경부" & Date>ymd("2017.07.04") & Date<=ymd("2018.11.09") ~ "Female",
+    Depart=="환경부" & Date>ymd("2018.11.09") & Date<=ymd("2021.01.22") ~ "Male",
+    Depart=="환경부" & Date>ymd("2021.01.22") ~ "Female",
+    TRUE ~ "NULL"
+  ))
+
+Speech.5 %>%
+  group_by(Gender) %>%
+  summarise(n=n()) %>%
+  as.data.frame()
+```
+
+## 성별에 따라 텍스트 데이터 분리
+```{r}
+Speech.F <- Speech.5 %>%
+  filter(Gender=="Female")
+
+Speech.M <- Speech.5 %>%
+  filter(Gender=="Male")
+```
+
+# 2. 품사 분석
+## 형태소 분석
+```{r, eval=FALSE}
+Speech.F.mp.1 <- Speech.F$Contents %>%
+  SimplePos09() %>% 
+  flatten_dfc() %>% 
+  pivot_longer(everything(), names_to="header", values_to="value") %>% 
+  separate_rows(value, sep="\\+") %>% 
+  separate(value, into=c("word", "pos09"), sep="/") %>%
+  group_by(pos09) %>%
+  summarise(n=n()) %>%
+  as.data.frame() 
+
+Speech.F.mp.2 <- Speech.F$Contents %>%
+  SimplePos22() %>% 
+  flatten_dfc() %>% 
+  pivot_longer(everything(), names_to="header", values_to="value") %>% 
+  separate_rows(value, sep="\\+") %>% 
+  separate(value, into=c("word", "pos22"), sep="/") %>%
+  group_by(pos22) %>%
+  summarise(n=n()) %>%
+  as.data.frame() 
+```
+
+```{r, eval=FALSE}
+Speech.M.mp.1 <- Speech.M$Contents %>%
+  SimplePos09() %>% 
+  flatten_dfc() %>% 
+  pivot_longer(everything(), names_to="header", values_to="value") %>% 
+  separate_rows(value, sep="\\+") %>% 
+  separate(value, into=c("word", "pos09"), sep="/") %>%
+  group_by(pos09) %>%
+  summarise(n=n()) %>%
+  as.data.frame() 
+
+Speech.M.mp.2 <- Speech.M$Contents %>%
+  SimplePos22() %>% 
+  flatten_dfc() %>% 
+  pivot_longer(everything(), names_to="header", values_to="value") %>% 
+  separate_rows(value, sep="\\+") %>% 
+  separate(value, into=c("word", "pos22"), sep="/") %>%
+  group_by(pos22) %>%
+  summarise(n=n()) %>%
+  as.data.frame()
+```
+
+# 3. 감성 분석
+## KNU 감성사전 로딩
+```{r, eval=FALSE}
+local_edition(1)
+senti.dic <- read_delim("C:/Users/Nam Yeji/Desktop/대학원/2022-1/2022-1 언어학습과 뇌의 변화/프로젝트/KnuSentiLex-master/KnuSentiLex/SentiWord_Dict.txt",
+                        col_names=F,
+                        delim="\t")
+
+names(senti.dic) <- c("word", "polarity")
+
+save(senti.dic, file="C:/Users/Nam Yeji/Desktop/대학원/2022-1/2022-1 언어학습과 뇌의 변화/프로젝트/senti.dic.rda")
+```
+
+```{r}
+load("C:/Users/Nam Yeji/Desktop/대학원/2022-1/2022-1 언어학습과 뇌의 변화/프로젝트/senti.dic.rda")
+
+# 단어 수준에서 토큰화
+Speech.F.tk <- Speech.F %>%
+  unnest_tokens(input=Contents,
+                output=token,
+                token="words",
+                drop=F)
+
+Speech.F.tk %>%
+  select(Contents, token) %>%
+  head()
+
+Speech.M.tk <- Speech.M %>%
+  unnest_tokens(input=Contents,
+                output=token,
+                token="words",
+                drop=F)
+
+Speech.M.tk %>%
+  select(Contents, token) %>%
+  head()
+```
+
+```{r}
+# 감성점수 부여
+Speech.F.tk.1 <- Speech.F.tk %>%
+  left_join(senti.dic, by=c("token"="word")) %>%
+  mutate(polarity=ifelse(is.na(polarity), 0, polarity))
+
+Speech.M.tk.1 <- Speech.M.tk %>%
+  left_join(senti.dic, by=c("token"="word")) %>%
+  mutate(polarity=ifelse(is.na(polarity), 0, polarity))
+```
+
+```{r}
+# 감성 분류
+Speech.F.tk.1 <- Speech.F.tk.1 %>%
+  mutate(sentiment=ifelse(polarity==2, "pos",
+                          ifelse(polarity==-2, "neg",
+                                 "neu")))
+Speech.F.tk.1 %>%
+  count(sentiment)
+
+Speech.M.tk.1 <- Speech.M.tk.1 %>%
+  mutate(sentiment=ifelse(polarity==2, "pos",
+                          ifelse(polarity==-2, "neg",
+                                 "neu")))
+Speech.M.tk.1 %>%
+  count(sentiment)
+```
+
+```{r}
+# 막대 그래프
+top10_sentiment.F <- Speech.F.tk.1 %>%
+  filter(sentiment!="neu") %>%
+  count(sentiment, token) %>%
+  group_by(sentiment) %>%
+  slice_max(n, n=10)
+top10_sentiment.F
+
+top10_sentiment.M <- Speech.M.tk.1 %>%
+  filter(sentiment!="neu") %>%
+  count(sentiment, token) %>%
+  group_by(sentiment) %>%
+  slice_max(n, n=10)
+top10_sentiment.M
+```
+
+```{r}
+ggplot(top10_sentiment.F, aes(x=reorder(token, n),
+                              y=n,
+                              fill=sentiment)) +
+  geom_col() +
+  coord_flip() +
+  geom_text(aes(label=n), hjust=-0.3) +
+  facet_wrap(~sentiment, scales="free") +
+  scale_y_continuous(expand=expansion(mult=c(0.05, 0.15))) +
+  labs(x=NULL)
+```
+
+```{r}
+ggplot(top10_sentiment.M, aes(x=reorder(token, n),
+                              y=n,
+                              fill=sentiment)) +
+  geom_col() +
+  coord_flip() +
+  geom_text(aes(label=n), hjust=-0.3) +
+  facet_wrap(~sentiment, scales="free") +
+  scale_y_continuous(expand=expansion(mult=c(0.05, 0.15))) +
+  labs(x=NULL)
+```
